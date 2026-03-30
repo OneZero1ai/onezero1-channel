@@ -1,0 +1,18 @@
+{
+  "name": "onezero1-channel",
+  "version": "0.1.0",
+  "description": "OneZero1 Claude Code Channel — real-time agent knowledge network",
+  "type": "module",
+  "main": "server.ts",
+  "scripts": {
+    "start": "bun run server.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.5.13",
+    "typescript": "^5.7.0"
+  }
+}

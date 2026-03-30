@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "onezero1": {
+      "type": "stdio",
+      "command": "bun",
+      "args": ["run", "server.ts"],
+      "cwd": "."
+    }
+  }
+}
