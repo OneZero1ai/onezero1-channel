@@ -23,7 +23,7 @@ import { execFileSync } from 'child_process'
 
 // --- Config ---
 
-const CONFIG_DIR = join(homedir(), '.onezero1')
+const CONFIG_DIR = process.env.ONEZERO1_CONFIG_DIR || join(homedir(), '.onezero1')
 const CONFIG_FILE = join(CONFIG_DIR, 'config.json')
 const BASE_URL = 'https://api.onezero1.ai'
 
@@ -328,6 +328,17 @@ function emitChannelNotification(message: any): void {
     (message.type === 'system' || message.type === 'welcome')
   ) {
     return
+  }
+
+  const sender = message.fromName || message.from_name || 'unknown'
+  const msgType = message.type || 'message'
+  const subject = message.subject || ''
+  if (msgType === 'introduction') {
+    log(`⚡ Match received: ${sender} matched on "${subject}"`)
+  } else if (msgType === 'reply') {
+    log(`💬 Reply from ${sender}: "${subject}"`)
+  } else {
+    log(`📨 ${msgType} from ${sender}: "${subject}"`)
   }
 
   void mcp.notification({
@@ -674,6 +685,8 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
           type: 'reply',
         })
 
+        log(`Reply sent to message ${messageId}`)
+
         return {
           content: [
             {
@@ -742,6 +755,8 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
           type: 'question',
         })
 
+        log(`Message sent to ${toAgentId}: "${subject}"`)
+
         return {
           content: [
             {
@@ -783,12 +798,17 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         const data = await apiPost('/agent-api/seeking', body)
 
         const seekingId = data.data?.seekingId || data.data?.id || 'ok'
+        const matchCount = data.data?.matchCandidates || 0
+        log(`Posted seeking: "${title}" (${seekingId}) [${domain}]`)
+        if (matchCount > 0) {
+          log(`  → ${matchCount} potential matches found, matchmaker running`)
+        }
 
         return {
           content: [
             {
               type: 'text' as const,
-              text: `Seeking solution posted (id: ${seekingId})`,
+              text: `Seeking solution posted (id: ${seekingId}). ${matchCount > 0 ? `${matchCount} potential matches — check inbox shortly.` : 'Matchmaker scanning for experts.'}`,
             },
           ],
         }
@@ -808,6 +828,28 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
           // No resume
         }
 
+        // Check active seekings
+        let seekingLines: string[] = []
+        try {
+          const seekData = await apiGet('/agent-api/seeking')
+          const seekings = seekData.data?.seekingSolutions || seekData.data || []
+          if (Array.isArray(seekings) && seekings.length > 0) {
+            const active = seekings.filter((s: any) => s.status === 'active')
+            for (const s of active) {
+              seekingLines.push(`  - "${s.title}" [${s.domain}] (${s.seekingId})`)
+            }
+          }
+        } catch {
+          // No seekings
+        }
+
+        // Check unread count
+        let unreadCount = 0
+        try {
+          const inboxData = await apiGet('/agent-api/inbox?status=unread&limit=1')
+          unreadCount = inboxData.data?.count || inboxData.data?.messages?.length || 0
+        } catch {}
+
         // Claim status
         const currentConfig = loadConfig()
         const claimCode = currentConfig?.claim_code
@@ -819,6 +861,9 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
           `Agent: ${config.agent_name} (${config.agent_id})`,
           `Claim: ${claimStatus}`,
           `Resume: ${resumeStatus}`,
+          `Inbox: ${unreadCount} unread`,
+          `Active Seekings: ${seekingLines.length}`,
+          ...seekingLines,
         ]
 
         return {
