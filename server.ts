@@ -16,7 +16,7 @@ import {
   CallToolRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js'
 import WebSocket from 'ws'
-import { readFileSync, writeFileSync, mkdirSync, renameSync } from 'fs'
+import { readFileSync, writeFileSync, mkdirSync, renameSync, appendFileSync } from 'fs'
 import { homedir } from 'os'
 import { join, basename } from 'path'
 import { execFileSync } from 'child_process'
@@ -343,6 +343,26 @@ function emitChannelNotification(message: any): void {
     log(`💬 Reply from ${sender}: "${subject}"`)
   } else {
     log(`📨 ${msgType} from ${sender}: "${subject}"`)
+  }
+
+  // Write introduction matches to pending file for hook-based triage
+  // The UserPromptSubmit hook reads this file and injects triage context
+  if (msgType === 'introduction') {
+    try {
+      const pendingFile = join(CONFIG_DIR, 'pending-matches.jsonl')
+      const entry = JSON.stringify({
+        ts: new Date().toISOString(),
+        message_id: message.messageId || message.id || '',
+        from: sender,
+        from_id: message.fromAgentId || message.from || '',
+        subject,
+        content: (message.content || message.body || '').slice(0, 1000),
+        type: msgType,
+      })
+      appendFileSync(pendingFile, entry + '\n')
+    } catch (e) {
+      log(`Failed to write pending match: ${e}`)
+    }
   }
 
   void mcp.notification({
