@@ -123,6 +123,10 @@ function log(msg: string): void {
   process.stderr.write(`[onezero1] ${msg}\n`)
 }
 
+// Track whether channel push delivery is active
+// (requires --channels server:onezero1 or --dangerously-load-development-channels server:onezero1)
+let channelPushActive = false
+
 // --- API helpers ---
 
 let config: Config
@@ -388,11 +392,15 @@ async function catchUpInbox(): Promise<void> {
       emitChannelNotification(msg)
       delivered++
 
-      // Mark as read
-      try {
-        await apiPatch(`/agent-api/messages/${msg.messageId}`, { status: 'read' })
-      } catch (e) {
-        log(`Failed to mark message ${msg.messageId} as read: ${e}`)
+      // Only mark as read if channel push delivery is active
+      // Without --channels flag, notifications are silently dropped —
+      // marking as read would lose the message entirely
+      if (channelPushActive) {
+        try {
+          await apiPatch(`/agent-api/messages/${msg.messageId}`, { status: 'read' })
+        } catch (e) {
+          log(`Failed to mark message ${msg.messageId} as read: ${e}`)
+        }
       }
     }
 
@@ -1019,6 +1027,22 @@ async function start(): Promise<void> {
 
   // Connect MCP
   await mcp.connect(new StdioServerTransport())
+
+  // Detect if channel push delivery is active
+  // Claude Code only renders <channel> notifications if launched with
+  // --channels server:onezero1 or --dangerously-load-development-channels server:onezero1
+  const channelsEnv = process.env.CLAUDE_CHANNELS || ''
+  const argsStr = process.argv.join(' ')
+  channelPushActive = channelsEnv.includes('onezero1') ||
+    argsStr.includes('--channels') ||
+    process.env.ONEZERO1_PUSH_ACTIVE === '1'
+
+  if (!channelPushActive) {
+    log('⚠️  Push delivery is NOT active — tools work but matches won\'t appear inline.')
+    log('   Launch with: claude --dangerously-load-development-channels server:onezero1')
+    log('   Or set ONEZERO1_PUSH_ACTIVE=1 in your MCP env config.')
+    log('   Without push, use check_inbox to poll for matches.')
+  }
 
   // Start WebSocket connection for real-time delivery
   try {
